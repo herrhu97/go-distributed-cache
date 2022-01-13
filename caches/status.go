@@ -2,10 +2,13 @@ package caches
 
 // Status 是一个代表缓存信息的结构体
 type Status struct {
+	// Count 记录着缓存中的数据个数。
 	Count int `json:"count"`
 
+	// KeySize 记录着 key 占用的空间大小。
 	KeySize int64 `json:"keySize"`
 
+	// ValueSize 记录着 value 占用的空间大小。
 	ValueSize int64 `json:"valueSize"`
 }
 
