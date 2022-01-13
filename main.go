@@ -4,6 +4,7 @@ import (
 	"cache-server/caches"
 	"cache-server/servers"
 	"flag"
+	"log"
 )
 
 func main() {
@@ -19,11 +20,22 @@ func main() {
 	flag.IntVar(&options.MaxGcCount, "maxGcCount", options.MaxGcCount, "The max count of entries that gc will clean.")
 	flag.Int64Var(&options.GcDuration, "gcDuration", options.GcDuration, "The duration between two gc tasks. The unit is Minute.")
 
+	// 获取持久化文件的路径和持久化的时间间隔
+	flag.StringVar(&options.DumpFile, "dumpFile", options.DumpFile, "The file used to dump the cache.")
+	flag.Int64Var(&options.DumpDuration, "dumpDuration", options.DumpDuration, "The duration between two dump tasks. The unit is Minute.")
+
 	// 千万要记得调用这个方法，否则参数不会被解析
 	flag.Parse()
 
 	cache := caches.NewCacheWith(options)
 	cache.AutoGc()
+
+	// 开启自动进行持久化任务
+	cache.AutoDump()
+
+	// 记录日志，能知道缓存服务是否启动了
+	log.Printf("Kafo is running on %s.", *address)
+
 	err := servers.NewHTTPServer(cache).Run(*address)
 	if err != nil {
 		panic(err)

@@ -31,6 +31,9 @@ func NewCache() *Cache {
 }
 
 func NewCacheWith(options Options) *Cache {
+	if cache, ok := recoverFromDumpFile(options.DumpFile); ok {
+		return cache
+	}
 	return &Cache{
 		// 这里指定 256 的初始容量是为了减少哈希冲突的几率和扩容带来的性能损失
 		data:    make(map[string]*value, 256),
@@ -38,6 +41,16 @@ func NewCacheWith(options Options) *Cache {
 		status:  newStatus(),
 		lock:    &sync.RWMutex{},
 	}
+}
+
+// recoverFromDumpFile 从dumpFile中回复缓存
+// 如果恢复不成功，就返回nil和false
+func recoverFromDumpFile(dumpFile string) (*Cache, bool) {
+	cache, err := newEmptyDump().from(dumpFile)
+	if err != nil {
+		return nil, false
+	}
+	return cache, true
 }
 
 // Get 返回指定key的value，如果找不到就返回false
@@ -75,14 +88,14 @@ func (c *Cache) SetWithTTL(key string, value []byte, ttl int64) error {
 	defer c.lock.Unlock()
 	if oldValue, ok := c.data[key]; ok {
 		// 如果是已经存在的 key，就不属于新增键值对了，为了方便处理，先把原本的键值对信息去除
-		c.status.subEntry(key, oldValue.data)
+		c.status.subEntry(key, oldValue.Data)
 	}
 
 	// 这边会判断缓存的容量是否足够，如果不够了，就返回写满保护的错误信息
 	if !c.checkEntrySize(key, value) {
 		// 注意刚刚把旧的键值对信息去除了，现在要加回去，因为并没有添加新的键值对
 		if oldValue, ok := c.data[key]; ok {
-			c.status.addEntry(key, oldValue.data)
+			c.status.addEntry(key, oldValue.Data)
 		}
 
 		// 使用 errors 包的方法创建一个简单的错误
@@ -104,7 +117,7 @@ func (c *Cache) Delete(key string) {
 	defer c.lock.Unlock()
 	if oldValue, ok := c.data[key]; ok {
 		// 如果存在这个 key 才会进行删除，并且需要先把缓存信息更新掉
-		c.status.subEntry(key, oldValue.data)
+		c.status.subEntry(key, oldValue.Data)
 		delete(c.data, key)
 	}
 }
@@ -133,7 +146,7 @@ func (c *Cache) gc() {
 	count := 0
 	for key, value := range c.data {
 		if !value.alive() {
-			c.status.subEntry(key, value.data)
+			c.status.subEntry(key, value.Data)
 			delete(c.data, key)
 
 			// 清理之后更新个数，并且判断是否已经达到配置中的最大清理个数
@@ -159,6 +172,27 @@ func (c *Cache) AutoGc() {
 			select {
 			case <-ticker.C:
 				c.gc()
+			}
+		}
+	}()
+}
+
+// dump 持久化缓存方法
+func (c *Cache) dump() error{
+	c.lock.Lock()
+	defer c.lock.Unlock()
+	return newDump(c).to(c.options.DumpFile)
+}
+
+// AutoDump 开启定时任务去持久化缓存。
+// 和自动 Gc 的原理是一样的，这里就不再赘述了。
+func (c *Cache) AutoDump() {
+	go func() {
+		ticker := time.NewTicker(time.Duration(c.options.DumpDuration) * time.Minute)
+		for {
+			select {
+				case <- ticker.C:
+					c.dump()
 			}
 		}
 	}()
