@@ -14,17 +14,16 @@ func main() {
 	address := flag.String("address", ":5837", "The address used to listen, such as 127.0.0.1:5837.")
 
 	// 创建一个默认配置
-	// 下面几个 flag 就是修改对应的配置参数用的
+    // 下面几个 flag 就是修改对应的配置参数用的
 	options := caches.DefaultOptions()
-	flag.Int64Var(&options.MaxEntrySize, "maxEntrySize", options.MaxEntrySize, "The max memory size that entries can use. The unit is GB.")
+	flag.IntVar(&options.MaxEntrySize, "maxEntrySize", options.MaxEntrySize, "The max memory size that entries can use. The unit is GB.")
 	flag.IntVar(&options.MaxGcCount, "maxGcCount", options.MaxGcCount, "The max count of entries that gc will clean.")
-	flag.Int64Var(&options.GcDuration, "gcDuration", options.GcDuration, "The duration between two gc tasks. The unit is Minute.")
-
-	// 获取持久化文件的路径和持久化的时间间隔
+	flag.IntVar(&options.GcDuration, "gcDuration", options.GcDuration, "The duration between two gc tasks. The unit is Minute.")
 	flag.StringVar(&options.DumpFile, "dumpFile", options.DumpFile, "The file used to dump the cache.")
-	flag.Int64Var(&options.DumpDuration, "dumpDuration", options.DumpDuration, "The duration between two dump tasks. The unit is Minute.")
-
-	// 千万要记得调用这个方法，否则参数不会被解析
+	flag.IntVar(&options.DumpDuration, "dumpDuration", options.DumpDuration, "The duration between two dump tasks. The unit is Minute.")
+	flag.IntVar(&options.MapSizeOfSegment, "mapSizeOfSegment", options.MapSizeOfSegment, "The map size of segment.")
+	flag.IntVar(&options.SegmentSize, "segmentSize", options.SegmentSize, "The number of segment in a cache. This value should be the pow of 2 for precision.")
+	flag.IntVar(&options.CasSleepTime, "casSleepTime", options.CasSleepTime, "The time of sleep in one cas step. The unit is Microsecond.")
 	flag.Parse()
 
 	cache := caches.NewCacheWith(options)

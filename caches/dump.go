@@ -15,14 +15,15 @@ import (
 // 如果某个结构体中没有导出字段，那么在 Gob 序列化的时候就会出错。
 // 比如我们在 dump 中引用了 value 结构，那么 value 结构中就必须至少有一个导出字段，否则序列化就会出错。
 type dump struct {
-	// Data 存储具体的键值对。
-	Data map[string]*value
 
 	// Options 记录着缓存的选项配置。
-	Options Options
+	Options *Options
 
-	// Status 记录着缓存的信息。
-	Status *Status
+	// SegmentSize 是segment的数量
+	SegmentSize int
+
+	// Segments 存储所有的segment实例
+	Segments []*segment
 }
 
 // newEmptyDump 创建一个空的dump结构对象并返回
@@ -33,9 +34,9 @@ func newEmptyDump() *dump {
 // newDump 创建一个dump对象并使用指定的Cache对象初始化
 func newDump(c *Cache) *dump {
 	return &dump{
-		Data:    c.data,
-		Options: c.options,
-		Status:  c.status,
+		SegmentSize: c.segmentSize,
+		Options:     c.options,
+		Segments:    c.segments,
 	}
 }
 
@@ -89,11 +90,17 @@ func (d *dump) from(dumpFile string) (*Cache, error) {
 		return nil, err
 	}
 
+	// 恢复出segment之后需要为每一个segment的未导出字段进行初始化
+	for _, segment := range d.Segments {
+		segment.options = d.Options
+		segment.lock = &sync.RWMutex{}
+	}
+
 	// 然后初始化一个缓存对象并返回
 	return &Cache{
-		data:    d.Data,
-		options: d.Options,
-		status:  d.Status,
-		lock:    &sync.RWMutex{},
+		segmentSize: d.SegmentSize,
+		segments:    d.Segments,
+		options:     d.Options,
+		dumping:     0,
 	}, nil
 }
