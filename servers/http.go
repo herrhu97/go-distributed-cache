@@ -2,6 +2,7 @@ package servers
 
 import (
 	"cache-server/caches"
+	"cache-server/helpers"
 	"encoding/json"
 	"io/ioutil"
 	"net/http"
@@ -13,20 +14,36 @@ import (
 
 // HTTPServer 是http服务器结构
 type HTTPServer struct {
+	// node 是用于记录集群信息的实例
+	*node
+
 	// cache 是内部存储用的缓存实例。
 	cache *caches.Cache
+
+	// options 存储着这个服务器的选项配置
+	options *Options
 }
 
 // NewHTTPServer 返回一个关于cache的新HTTP服务器
-func NewHTTPServer(cache *caches.Cache) *HTTPServer {
-	return &HTTPServer{
-		cache: cache,
+func NewHTTPServer(cache *caches.Cache, options *Options) (*HTTPServer, error) {
+	n, err := newNode(options)
+	if err != nil {
+		return nil, err
 	}
+
+	return &HTTPServer{
+		node:    n,
+		cache:   cache,
+		options: options,
+	}, nil
 }
 
 // Run 启动服务器
-func (hs *HTTPServer) Run(address string) error {
-	return http.ListenAndServe(address, hs.routerHandler())
+func (hs *HTTPServer) Run() error {
+	return http.ListenAndServe(
+		helpers.JoinAddressAndPort(
+			hs.options.Address, hs.options.Port),
+		hs.routerHandler())
 }
 
 // wrapUriWithVersion 会用 API 版本去包装 uri，比如 "v1" 版本的 API 包装 "/cache" 就会变成 "/v1/cache"。
@@ -41,12 +58,26 @@ func (hs *HTTPServer) routerHandler() http.Handler {
 	router.PUT(wrapUriWithVersion("/cache/:key"), hs.setHandler)
 	router.DELETE(wrapUriWithVersion("/cache/:key"), hs.deleteHandler)
 	router.GET(wrapUriWithVersion("/status"), hs.statusHandler)
+	router.GET(wrapUriWithVersion("/nodes"), hs.nodesHandler)
 	return router
 }
 
 // getHandler 用于获取缓存数据
 func (hs *HTTPServer) getHandler(writer http.ResponseWriter, request *http.Request, params httprouter.Params) {
 	key := params.ByName("key")
+	node, err := hs.selectNode(key)
+	if err != nil {
+		writer.WriteHeader(http.StatusInternalServerError)
+		return
+	}
+
+	// 非当前节点告知正确节点，直接返回
+	if !hs.isCurrentNode(node) {
+		writer.Header().Set("Location", node+request.RequestURI)
+		writer.WriteHeader(http.StatusTemporaryRedirect)
+		return
+	}
+
 	value, ok := hs.cache.Get(key)
 	if !ok {
 		// 返回 404 错误码
@@ -59,6 +90,19 @@ func (hs *HTTPServer) getHandler(writer http.ResponseWriter, request *http.Reque
 // setHandler 用于保存缓存数据
 func (hs *HTTPServer) setHandler(writer http.ResponseWriter, request *http.Request, params httprouter.Params) {
 	key := params.ByName("key")
+
+	node, err := hs.selectNode(key)
+	if err != nil {
+		writer.WriteHeader(http.StatusInternalServerError)
+		return
+	}
+
+	if !hs.isCurrentNode(node) {
+		writer.Header().Set("Location", node+request.RequestURI)
+		writer.WriteHeader(http.StatusTemporaryRedirect)
+		return
+	}
+
 	value, err := ioutil.ReadAll(request.Body)
 	if err != nil {
 		// 返回 500 错误码
@@ -71,14 +115,14 @@ func (hs *HTTPServer) setHandler(writer http.ResponseWriter, request *http.Reque
 	if err != nil {
 		// 返回500错误码
 		writer.WriteHeader(http.StatusInternalServerError)
-		return 
+		return
 	}
 
 	// 添加数据，并设置为指定的ttl
 	err = hs.cache.SetWithTTL(key, value, ttl)
 	if err != nil {
 		// 如果返回了错误，说明触发了写满保护机制，返回 413 错误码，这个错误码表示请求体中的数据太大了
-        // 同时返回错误信息，加上一个 "Error: " 的前缀，方便识别为错误码
+		// 同时返回错误信息，加上一个 "Error: " 的前缀，方便识别为错误码
 		writer.WriteHeader(http.StatusRequestEntityTooLarge)
 		writer.Write([]byte("Error: " + err.Error()))
 		return
@@ -100,7 +144,23 @@ func ttlOf(request *http.Request) (int64, error) {
 // deleteHandler 用于删除缓存数据
 func (hs *HTTPServer) deleteHandler(writer http.ResponseWriter, r *http.Request, params httprouter.Params) {
 	key := params.ByName("key")
-	hs.cache.Delete(key)
+	node, err := hs.selectNode(key)
+	if err != nil {
+		writer.WriteHeader(http.StatusInternalServerError)
+		return
+	}
+
+	if !hs.isCurrentNode(node) {
+		writer.Header().Set("Location", node+r.RequestURI)
+		writer.WriteHeader(http.StatusTemporaryRedirect)
+		return
+	}
+
+	err = hs.cache.Delete(key)
+	if err != nil {
+		writer.WriteHeader(http.StatusInternalServerError)
+		return
+	}
 }
 
 // statusHandler 用于获取缓存键值对的个数
@@ -113,4 +173,13 @@ func (hs *HTTPServer) statusHandler(writer http.ResponseWriter, request *http.Re
 		return
 	}
 	writer.Write(status)
+}
+
+func (hs *HTTPServer) nodesHandler(writer http.ResponseWriter, request *http.Request, params httprouter.Params) {
+	nodes, err := json.Marshal(hs.nodes())
+	if err != nil {
+		writer.WriteHeader(http.StatusInternalServerError)
+		return
+	}
+	writer.Write(nodes)
 }

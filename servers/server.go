@@ -12,13 +12,13 @@ const (
 // Server 是服务器结构的接口
 type Server interface {
 	// Run 会将服务器启动指定的 address 上。
-	Run(address string) error
+	Run() error
 }
 
 // NewServer 返回一个服务端实例，通过serverType区分
-func NewServer(serverType string, cache *caches.Cache) Server {
-	if serverType == "tcp" {
-		return NewTCPServer(cache)
+func NewServer(cache *caches.Cache, options Options) (Server, error) {
+	if options.ServerType == "tcp" {
+		return NewTCPServer(cache, &options)
 	}
-	return NewHTTPServer(cache)
+	return NewHTTPServer(cache, &options)
 }
