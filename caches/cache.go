@@ -99,14 +99,15 @@ func (c *Cache) SetWithTTL(key string, value []byte, ttl int64) error {
 }
 
 // Delete删除指定key的键值对数据
-func (c *Cache) Delete(key string) {
+func (c *Cache) Delete(key string) error {
 	c.waitForDumping()
 	c.segmentOf(key).delete(key)
+	return nil
 }
 
 // Status 返回缓存信息。
 func (c *Cache) Status() Status {
-	result := newStatus()
+	result := NewStatus()
 	for _, segment := range c.segments {
 		status := segment.status()
 		result.Count += status.Count

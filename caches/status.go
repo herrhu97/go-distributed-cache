@@ -12,8 +12,8 @@ type Status struct {
 	ValueSize int64 `json:"valueSize"`
 }
 
-// newStatus 返回一个缓存信息对象指针
-func newStatus() *Status {
+// NewStatus 返回一个缓存信息对象指针
+func NewStatus() *Status {
 	return &Status{
 		Count:     0,
 		KeySize:   0,

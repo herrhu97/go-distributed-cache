@@ -14,7 +14,7 @@ func main() {
 	address := flag.String("address", ":5837", "The address used to listen, such as 127.0.0.1:5837.")
 
 	// 创建一个默认配置
-    // 下面几个 flag 就是修改对应的配置参数用的
+	// 下面几个 flag 就是修改对应的配置参数用的
 	options := caches.DefaultOptions()
 	flag.IntVar(&options.MaxEntrySize, "maxEntrySize", options.MaxEntrySize, "The max memory size that entries can use. The unit is GB.")
 	flag.IntVar(&options.MaxGcCount, "maxGcCount", options.MaxGcCount, "The max count of entries that gc will clean.")
@@ -24,6 +24,9 @@ func main() {
 	flag.IntVar(&options.MapSizeOfSegment, "mapSizeOfSegment", options.MapSizeOfSegment, "The map size of segment.")
 	flag.IntVar(&options.SegmentSize, "segmentSize", options.SegmentSize, "The number of segment in a cache. This value should be the pow of 2 for precision.")
 	flag.IntVar(&options.CasSleepTime, "casSleepTime", options.CasSleepTime, "The time of sleep in one cas step. The unit is Microsecond.")
+
+	// 添加一个 flag 用于选择启动的服务端类型，默认是 tcp
+	serverType := flag.String("serverType", "tcp", "The type of server (http, tcp).")
 	flag.Parse()
 
 	cache := caches.NewCacheWith(options)
@@ -33,9 +36,9 @@ func main() {
 	cache.AutoDump()
 
 	// 记录日志，能知道缓存服务是否启动了
-	log.Printf("Kafo is running on %s.", *address)
+	log.Printf("Kafo is running on %s at %s.", *serverType, *address)
 
-	err := servers.NewHTTPServer(cache).Run(*address)
+	err := servers.NewServer(*serverType, cache).Run(*address)
 	if err != nil {
 		panic(err)
 	}
